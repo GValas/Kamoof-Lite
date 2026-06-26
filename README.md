@@ -18,9 +18,17 @@ Plugin de déguisement pour serveur **Paper** (Minecraft), inspiré du style *Ka
 
 ## Installation
 
-1. Construire le jar (voir [Build](#build)) ou récupérer `KamoofLite.jar`.
-2. Le déposer dans le dossier `plugins/` du serveur.
-3. Redémarrer (ou `restart` dans la console).
+Deux options.
+
+**A. Binaire prêt à l'emploi (sans rien compiler)**
+
+1. Télécharger [`dist/KamoofLite.jar`](dist/KamoofLite.jar) (sur GitHub : bouton *Download raw file*, ou via *Releases* si publié).
+2. Le déposer dans le dossier `plugins/` du serveur Paper.
+3. Redémarrer le serveur (ou `restart` dans la console).
+
+> Le jar de `dist/` correspond à la dernière version taguée dans `plugin.yml` (actuellement **v2.9**). Il est regénéré et recommité à chaque nouvelle version.
+
+**B. Compiler soi-même** — voir [Build](#build), puis déposer le jar produit dans `plugins/`.
 
 ## Commandes
 
@@ -44,6 +52,11 @@ bash src/build.sh
 
 Les scripts sauvegardent l'ancien `plugins/KamoofLite.jar` en `.bak`, puis produisent le nouveau jar. Détails et arborescence : [`src/README.md`](src/README.md).
 
+> **Publier une nouvelle version** : après le build, recopier le jar produit vers `dist/` pour mettre à jour le binaire téléchargeable, puis commiter :
+> ```bash
+> cp plugins/KamoofLite.jar dist/KamoofLite.jar   # (le chemin de plugins/ dépend de ta racine serveur)
+> ```
+
 ## Structure
 
 ```
@@ -53,6 +66,8 @@ KamoofLite/
 │   ├── plugin.yml               metadata
 │   ├── build.ps1 / build.sh     build local
 │   └── README.md                doc dev détaillée
+├── dist/
+│   └── KamoofLite.jar           binaire prêt à l'emploi (téléchargement direct)
 ├── .vscode/                     classpath IntelliSense (sans Maven ni Docker)
 └── CLAUDE.md                    contexte serveur + historique des versions
 ```

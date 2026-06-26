@@ -3,6 +3,9 @@ src/build/
 *.class
 *.jar
 
+# ...sauf le binaire de release versionné (pour télécharger sans compiler)
+!dist/KamoofLite.jar
+
 # Sauvegardes du jar serveur
 *.bak
 *.bak-*

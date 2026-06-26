@@ -10,23 +10,45 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.Chunk;
+import org.bukkit.Location;
+import org.bukkit.World;
+import org.bukkit.block.BlockState;
+import org.bukkit.block.DoubleChest;
+import org.bukkit.entity.Item;
+import org.bukkit.entity.ItemFrame;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.inventory.CraftItemEvent;
+import org.bukkit.event.inventory.InventoryCloseEvent;
+import org.bukkit.event.inventory.PrepareItemCraftEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.world.ChunkLoadEvent;
 import org.bukkit.inventory.EquipmentSlot;
+import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.Recipe;
+import org.bukkit.inventory.meta.BlockStateMeta;
+import org.bukkit.inventory.meta.BundleMeta;
+import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.io.File;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import org.bukkit.configuration.file.YamlConfiguration;
 
 public class KamoofLite extends JavaPlugin implements Listener {
 
@@ -46,17 +68,73 @@ public class KamoofLite extends JavaPlugin implements Listener {
     // Logge une seule fois les signatures NMS trouvees (diagnostic pour finaliser le respawn).
     private boolean diagDone = false;
 
+    // ---------------------------------------------------------------------
+    // Masse unique sur le serveur (v2.9)
+    // ---------------------------------------------------------------------
+    // Memoire persistante de ce qu'on ne peut PAS observer en direct :
+    //  - offlineMaceHolders : UUID de joueurs HORS-LIGNE dont le dernier inventaire vu
+    //    (inv + ender chest, shulkers/bundles inclus) contenait une masse.
+    //  - maceContainers : emplacements "monde;x;y;z" de conteneurs vus contenir une masse.
+    // Tout le reste (joueurs en ligne, masses au sol) est recompte a la demande.
+    private final Set<UUID> offlineMaceHolders = new HashSet<>();
+    private final Set<String> maceContainers = new HashSet<>();
+    private File maceFile;
+
     @Override
     public void onEnable() {
         getServer().getPluginManager().registerEvents(this, this);
-        getLogger().info("KamoofLite v2.8 actif.");
+        chargerMasse();
+        getLogger().info("KamoofLite v2.9 actif.");
+    }
+
+    @Override
+    public void onDisable() {
+        sauverMasse();
+    }
+
+    // Charge la memoire persistante de la masse unique depuis mace.yml.
+    private void chargerMasse() {
+        maceFile = new File(getDataFolder(), "mace.yml");
+        if (!maceFile.exists()) return;
+        YamlConfiguration cfg = YamlConfiguration.loadConfiguration(maceFile);
+        for (String s : cfg.getStringList("offline-holders")) {
+            try { offlineMaceHolders.add(UUID.fromString(s)); } catch (IllegalArgumentException ignore) { }
+        }
+        maceContainers.addAll(cfg.getStringList("containers"));
+    }
+
+    // Sauve la memoire persistante (appelee a chaque modification + onDisable).
+    private void sauverMasse() {
+        try {
+            if (maceFile == null) maceFile = new File(getDataFolder(), "mace.yml");
+            getDataFolder().mkdirs();
+            YamlConfiguration cfg = new YamlConfiguration();
+            List<String> holders = new ArrayList<>();
+            for (UUID id : offlineMaceHolders) holders.add(id.toString());
+            cfg.set("offline-holders", holders);
+            cfg.set("containers", new ArrayList<>(maceContainers));
+            cfg.save(maceFile);
+        } catch (Throwable t) {
+            getLogger().warning("[masse] sauvegarde mace.yml echouee: " + t.getMessage());
+        }
     }
 
     // Joueur deguise qui se deconnecte : le message de quit doit nommer le DEGUISEMENT,
     // pas le vrai pseudo. On nettoie aussi les Map (pas de persistance du deguisement).
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
-        UUID id = event.getPlayer().getUniqueId();
+        Player player = event.getPlayer();
+        UUID id = player.getUniqueId();
+
+        // Masse unique : le joueur devient inobservable -> on memorise s'il emporte une masse.
+        boolean changed;
+        if (joueurPorteMasse(player)) {
+            changed = offlineMaceHolders.add(id);
+        } else {
+            changed = offlineMaceHolders.remove(id);
+        }
+        if (changed) sauverMasse();
+
         String name = disguiseName.remove(id);
         original.remove(id);
         originalProfileNms.remove(id);
@@ -369,5 +447,197 @@ public class KamoofLite extends JavaPlugin implements Listener {
             }
         }
         return null;
+    }
+
+    // ---------------------------------------------------------------------
+    // Masse unique : detection "une masse existe-t-elle ?" (recompte a la demande)
+    // ---------------------------------------------------------------------
+
+    // Vrai si une masse se trouve dans ce stack, ou imbriquee dans une shulker box / un bundle.
+    private boolean stackContientMasse(ItemStack it) {
+        if (it == null || it.getType() == Material.AIR) return false;
+        if (it.getType() == Material.MACE) return true;
+        ItemMeta meta = it.getItemMeta();
+        if (meta instanceof BlockStateMeta bsm && bsm.hasBlockState()) {
+            BlockState bs = bsm.getBlockState();
+            if (bs instanceof InventoryHolder ih) {
+                for (ItemStack inner : ih.getInventory().getContents()) {
+                    if (stackContientMasse(inner)) return true;
+                }
+            }
+        }
+        if (meta instanceof BundleMeta bm && bm.hasItems()) {
+            for (ItemStack inner : bm.getItems()) {
+                if (stackContientMasse(inner)) return true;
+            }
+        }
+        return false;
+    }
+
+    // Vrai si l'inventaire (ou un conteneur imbrique) contient une masse.
+    private boolean inventaireContientMasse(Inventory inv) {
+        if (inv == null) return false;
+        for (ItemStack it : inv.getContents()) {
+            if (stackContientMasse(it)) return true;
+        }
+        return false;
+    }
+
+    // Vrai si le joueur porte une masse (inventaire principal OU ender chest).
+    private boolean joueurPorteMasse(Player p) {
+        return inventaireContientMasse(p.getInventory()) || inventaireContientMasse(p.getEnderChest());
+    }
+
+    // Le coeur de la regle : une masse existe-t-elle quelque part sur le serveur ?
+    private boolean uneMasseExiste() {
+        // 1) Joueurs en ligne (inv + ender chest, shulkers/bundles inclus).
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            if (joueurPorteMasse(p)) return true;
+        }
+        // 2) Masses au sol (item entities) ou dans un cadre, dans les mondes charges.
+        for (World w : Bukkit.getWorlds()) {
+            for (Item e : w.getEntitiesByClass(Item.class)) {
+                if (stackContientMasse(e.getItemStack())) return true;
+            }
+            for (ItemFrame f : w.getEntitiesByClass(ItemFrame.class)) {
+                if (stackContientMasse(f.getItem())) return true;
+            }
+        }
+        // 3) Porteurs HORS-LIGNE memorises (inobservables -> on fait confiance a la memoire).
+        for (UUID id : offlineMaceHolders) {
+            if (Bukkit.getPlayer(id) == null) return true; // toujours hors-ligne
+        }
+        // 4) Conteneurs memorises : si le chunk est decharge on garde, sinon on verifie (et on purge).
+        if (verifierConteneurs()) return true;
+        return false;
+    }
+
+    // Parcourt maceContainers : conteneur en chunk decharge -> compte comme existant ;
+    // en chunk charge -> verifie reellement et purge l'entree si la masse n'y est plus.
+    private boolean verifierConteneurs() {
+        boolean trouve = false;
+        boolean modifie = false;
+        for (String key : new ArrayList<>(maceContainers)) {
+            Location loc = parseLocation(key);
+            if (loc == null || loc.getWorld() == null) { maceContainers.remove(key); modifie = true; continue; }
+            if (!loc.getWorld().isChunkLoaded(loc.getBlockX() >> 4, loc.getBlockZ() >> 4)) {
+                trouve = true; // chunk decharge -> gele -> la masse est toujours la
+                continue;
+            }
+            BlockState bs = loc.getBlock().getState();
+            if (bs instanceof InventoryHolder ih && inventaireContientMasse(ih.getInventory())) {
+                trouve = true;
+            } else {
+                maceContainers.remove(key); // perime -> auto-reparation
+                modifie = true;
+            }
+        }
+        if (modifie) sauverMasse();
+        return trouve;
+    }
+
+    // "monde;x;y;z" pour une position de bloc.
+    private String clefDeLocation(Location loc) {
+        return loc.getWorld().getName() + ";" + loc.getBlockX() + ";" + loc.getBlockY() + ";" + loc.getBlockZ();
+    }
+
+    private Location parseLocation(String key) {
+        String[] p = key.split(";");
+        if (p.length != 4) return null;
+        World w = Bukkit.getWorld(p[0]);
+        if (w == null) return null;
+        try {
+            return new Location(w, Integer.parseInt(p[1]), Integer.parseInt(p[2]), Integer.parseInt(p[3]));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    // Emplacement de bloc d'un conteneur a partir de son InventoryHolder (null si ce n'est
+    // pas un conteneur de bloc : inventaire joueur, table de craft, etc.).
+    private Location locationDuConteneur(InventoryHolder holder) {
+        if (holder instanceof DoubleChest dc) {
+            InventoryHolder left = dc.getLeftSide();
+            if (left instanceof BlockState bs) return bs.getLocation();
+            return null;
+        }
+        if (holder instanceof BlockState bs) return bs.getLocation();
+        return null;
+    }
+
+    // ---------------------------------------------------------------------
+    // Masse unique : handlers d'evenements
+    // ---------------------------------------------------------------------
+
+    private boolean recetteEstMasse(Recipe recipe) {
+        return recipe != null && recipe.getResult().getType() == Material.MACE;
+    }
+
+    // Apercu du craft : si une masse existe deja, on vide le slot resultat (feedback visuel direct).
+    @EventHandler
+    public void onPrepareCraft(PrepareItemCraftEvent event) {
+        if (!recetteEstMasse(event.getRecipe())) return;
+        if (uneMasseExiste()) {
+            event.getInventory().setResult(null);
+        }
+    }
+
+    // Securite (couvre le shift-clic) : on annule la fabrication si une masse existe deja.
+    @EventHandler
+    public void onCraft(CraftItemEvent event) {
+        if (!recetteEstMasse(event.getRecipe())) return;
+        if (uneMasseExiste()) {
+            event.setCancelled(true);
+            if (event.getWhoClicked() instanceof Player p) {
+                p.sendMessage("§cUne masse existe deja sur le serveur. Impossible d'en fabriquer une autre.");
+            }
+        }
+    }
+
+    // Connexion : le joueur redevient observable en direct -> on le retire des porteurs hors-ligne.
+    // (Satisfait aussi le "scan a la connexion" pour integrer une masse deja en jeu.)
+    @EventHandler
+    public void onJoin(PlayerJoinEvent event) {
+        if (offlineMaceHolders.remove(event.getPlayer().getUniqueId())) {
+            sauverMasse();
+        }
+    }
+
+    // Fermeture d'un conteneur de bloc : on met a jour la memoire des coffres a masse.
+    @EventHandler
+    public void onInventoryClose(InventoryCloseEvent event) {
+        Inventory inv = event.getInventory();
+        Location loc = locationDuConteneur(inv.getHolder());
+        if (loc == null) return; // pas un conteneur de bloc
+        String key = clefDeLocation(loc);
+        boolean changed;
+        if (inventaireContientMasse(inv)) {
+            changed = maceContainers.add(key);
+        } else {
+            changed = maceContainers.remove(key);
+        }
+        if (changed) sauverMasse();
+    }
+
+    // Chargement de chunk : purge les entrees de conteneurs devenues invalides
+    // (coffre supprime/vide pendant qu'on ne regardait pas) -> auto-reparation sans commande.
+    @EventHandler
+    public void onChunkLoad(ChunkLoadEvent event) {
+        if (maceContainers.isEmpty()) return;
+        Chunk chunk = event.getChunk();
+        String world = chunk.getWorld().getName();
+        boolean modifie = false;
+        for (String key : new ArrayList<>(maceContainers)) {
+            Location loc = parseLocation(key);
+            if (loc == null) { maceContainers.remove(key); modifie = true; continue; }
+            if (!loc.getWorld().getName().equals(world)) continue;
+            if ((loc.getBlockX() >> 4) != chunk.getX() || (loc.getBlockZ() >> 4) != chunk.getZ()) continue;
+            BlockState bs = loc.getBlock().getState();
+            if (!(bs instanceof InventoryHolder ih) || !inventaireContientMasse(ih.getInventory())) {
+                maceContainers.remove(key);
+                modifie = true;
+            }
+        }
+        if (modifie) sauverMasse();
     }
 }

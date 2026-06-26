@@ -14,7 +14,17 @@ Fonctionnalités :
 - Lâcher sa tête à la mort.
 - Clic-droit sur une tête de joueur → se déguiser en lui (`setPlayerProfile`).
 - `/undisguise` → revenir normal. La mort réinitialise aussi le déguisement.
-- **Pas de persistance** : le déguisement ne survit pas à une reconnexion.
+- **Pas de persistance** (déguisement) : le déguisement ne survit pas à une reconnexion.
+- **Masse unique sur le serveur** (v2.9) : tant qu'une masse existe quelque part, plus personne ne peut en fabriquer une autre.
+
+### Version : v2.9 (masse unique sur le serveur)
+
+- **But** : la Masse (`MACE`) devient un objet **unique à l'échelle du serveur**. Tant qu'une masse existe, le craft d'une 2e est bloqué ; dès que l'existante disparaît, le craft se rouvre. **Toute** masse compte (craft, `/give`, créatif).
+- **Principe : « recompte à la demande »** (pas de compteur +1/-1 qui pourrait rester bloqué — il n'y a volontairement **pas de commande admin**). `uneMasseExiste()` re-dérive la réponse à chaque tentative de craft à partir de : (1) inventaires + ender chests des joueurs **en ligne** (récursion **shulker box / bundle**), (2) masses au sol / cadres dans les **chunks chargés**, (3) **porteurs hors-ligne** mémorisés, (4) **conteneurs** mémorisés (chunk déchargé = gelé → compte ; chargé → vérifié + purgé si périmé).
+- **Blocage** : `PrepareItemCraftEvent` vide le slot résultat (feedback visuel) + `CraftItemEvent` annule (couvre le shift-clic) avec message.
+- **Mémoire persistante** : `plugins/KamoofLite/mace.yml` (`offline-holders` = UUID hors-ligne porteurs ; `containers` = emplacements `monde;x;y;z`). Entretenue par `PlayerJoinEvent` (retrait, = scan à la connexion), `onQuit` (scan + ajout/retrait), `InventoryCloseEvent` (conteneurs), `ChunkLoadEvent` (purge auto des entrées périmées).
+- **Limite assumée** : une masse dans un conteneur supprimé par action admin en chunk déchargé peut sur-bloquer temporairement ; auto-réparé au rechargement du chunk (`ChunkLoadEvent`).
+- **À VALIDER en live** : crafter une 1re masse OK ; 2e bloquée (slot vide + message) ; après destruction de la masse (despawn/lave/vide), craft rouvert ; masse emportée hors-ligne bloque les autres.
 
 ### Version : v2.8 (fix skin cracké pour les AUTRES joueurs + TAB)
 

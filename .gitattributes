@@ -1,0 +1,12 @@
+# Normalisation des fins de ligne : LF dans le dépôt, natif au checkout
+* text=auto
+
+# Scripts qui doivent garder un EOL spécifique
+*.sh   text eol=lf
+*.ps1  text eol=crlf
+*.bat  text eol=crlf
+
+# Fichiers binaires (jamais de conversion)
+*.jar   binary
+*.class binary
+*.png   binary

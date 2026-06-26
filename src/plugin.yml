@@ -1,0 +1,10 @@
+name: KamoofLite
+version: '2.3'
+main: kamoof.KamoofLite
+api-version: '1.21'
+author: Claude
+description: Drop ta tete a la mort, et transforme-toi en clic-droit (style Kamoof SMP).
+commands:
+  undisguise:
+    description: Reprends ton apparence d'origine.
+    usage: /undisguise

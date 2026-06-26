@@ -1,0 +1,13 @@
+# Artefacts de build (regénérés par build.ps1 / build.sh)
+src/build/
+*.class
+*.jar
+
+# Sauvegardes du jar serveur
+*.bak
+*.bak-*
+*.bak.*
+
+# Divers OS / éditeur
+Thumbs.db
+.DS_Store

@@ -1,0 +1,11 @@
+{
+  "java.project.sourcePaths": ["src"],
+  "java.project.outputPath": "src/build",
+  "java.project.referencedLibraries": [
+    "../paper-26.1.2-72.jar",
+    "../libraries/**/*.jar"
+  ],
+  "files.exclude": {
+    "src/build": true
+  }
+}

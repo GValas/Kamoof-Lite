@@ -1,10 +1,17 @@
 name: KamoofLite
-version: '2.9'
+version: '3.0'
 main: kamoof.KamoofLite
 api-version: '1.21'
 author: Claude
-description: Drop ta tete a la mort, et transforme-toi en clic-droit (style Kamoof SMP).
+description: Drop ta tete a la mort, transforme-toi en clic-droit, et rituel des tetes (style Kamoof SMP).
 commands:
   undisguise:
     description: Reprends ton apparence d'origine.
     usage: /undisguise
+  ritual:
+    description: Rituel des tetes (setup admin + acceptation de pacte).
+    usage: /ritual <setup|place x y z|pacte 1|2>
+permissions:
+  kamooflite.admin:
+    description: Administrateur KamoofLite (setup du rituel).
+    default: op

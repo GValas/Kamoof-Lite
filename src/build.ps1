@@ -41,11 +41,14 @@ if (Test-Path $BuildDir) { Remove-Item -Recurse -Force $BuildDir }
 New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
 
 Write-Host "Compilation (JDK 25)..."
-& $Javac -cp $ClassPath -d $BuildDir (Join-Path $SrcDir 'kamoof\KamoofLite.java')
+$Sources = Get-ChildItem -Path (Join-Path $SrcDir 'kamoof') -Recurse -Filter *.java | ForEach-Object { $_.FullName }
+& $Javac -encoding UTF-8 -cp $ClassPath -d $BuildDir $Sources
 if ($LASTEXITCODE -ne 0) { throw "Echec compilation (code $LASTEXITCODE)" }
 
-# --- plugin.yml a la racine du jar ---
+# --- plugin.yml + ressources (structures NBT du rituel) a la racine du jar ---
 Copy-Item (Join-Path $SrcDir 'plugin.yml') (Join-Path $BuildDir 'plugin.yml') -Force
+Copy-Item (Join-Path $SrcDir 'ritual.nbt') (Join-Path $BuildDir 'ritual.nbt') -Force
+Copy-Item (Join-Path $SrcDir 'ritualbase.nbt') (Join-Path $BuildDir 'ritualbase.nbt') -Force
 
 # --- Backup de l'ancien jar ---
 if (Test-Path $OutJar) {
@@ -56,7 +59,7 @@ if (Test-Path $OutJar) {
 
 # --- Packaging ---
 Write-Host "Packaging du jar..."
-& $Jar cf $OutJar -C $BuildDir plugin.yml -C $BuildDir kamoof
+& $Jar cf $OutJar -C $BuildDir plugin.yml -C $BuildDir ritual.nbt -C $BuildDir ritualbase.nbt -C $BuildDir kamoof
 if ($LASTEXITCODE -ne 0) { throw "Echec jar (code $LASTEXITCODE)" }
 
 Write-Host "OK -> $OutJar"

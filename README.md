@@ -10,6 +10,7 @@ Plugin de déguisement pour serveur **Paper** (Minecraft), inspiré du style *Ka
 - 🎭 **Déguisement au clic-droit** — clic-droit sur une tête de joueur → tu prends son apparence (skin + pseudo, au-dessus de la tête et dans la TAB), pour toi comme pour les autres.
 - 🔄 **`/undisguise`** — tu reprends ton apparence d'origine. La mort réinitialise aussi le déguisement.
 - ⏳ **Pas de persistance** — un déguisement ne survit pas à une reconnexion (volontaire).
+- 🩸 **Rituel des têtes** (v3.0) — pose 9 têtes de joueurs distincts sur l'autel du rituel → cinématique POV → un livre « Pacte Démonique » tombe au centre. Deux pactes : **Ensanglanté** (+5 cœurs, mais mort = perte + 3 têtes) et **Oublié** (Weakness, mais aucune tête ne tombe). Setup admin : `/ritual setup`. Porté du *KamoofSMP S2*.
 
 ## Compatibilité
 
@@ -26,15 +27,17 @@ Deux options.
 2. Le déposer dans le dossier `plugins/` du serveur Paper.
 3. Redémarrer le serveur (ou `restart` dans la console).
 
-> Le jar de `dist/` correspond à la dernière version taguée dans `plugin.yml` (actuellement **v2.9**). Il est regénéré et recommité à chaque nouvelle version.
+> Le jar de `dist/` correspond à la dernière version taguée dans `plugin.yml` (actuellement **v3.0**). Il est regénéré et recommité à chaque nouvelle version.
 
 **B. Compiler soi-même** — voir [Build](#build), puis déposer le jar produit dans `plugins/`.
 
 ## Commandes
 
-| Commande      | Description                          |
-|---------------|--------------------------------------|
-| `/undisguise` | Reprendre son apparence d'origine.   |
+| Commande            | Description                                        |
+|---------------------|----------------------------------------------------|
+| `/undisguise`       | Reprendre son apparence d'origine.                 |
+| `/ritual setup`     | (admin) Reçoit les items de génération de l'autel. |
+| `/ritual pacte 1\|2` | Accepter un pacte (livre « Pacte Démonique » en main). |
 
 ## Build
 

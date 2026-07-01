@@ -16,6 +16,16 @@ Fonctionnalités :
 - `/undisguise` → revenir normal. La mort réinitialise aussi le déguisement.
 - **Pas de persistance** (déguisement) : le déguisement ne survit pas à une reconnexion.
 - **Masse unique sur le serveur** (v2.9) : tant qu'une masse existe quelque part, plus personne ne peut en fabriquer une autre.
+- **Rituel des têtes** (v3.0) : autel + 9 têtes de joueurs distincts → cinématique POV → livre « Pacte Démonique » avec 2 pactes (Ensanglanté / Oublié).
+
+### Version : v3.0 (rituel des têtes)
+
+- **But** : porter le rituel des têtes de **KamoofSMP S2** (jar officiel décompilé via CFR) dans KamoofLite. Sous-package **`kamoof.ritual`** (5 classes : `RitualManager`, `RitualSetup`, `RitualListener`, `RitualAnimation`, `RitualBook`). Réglages **codés en dur** (défauts S2), textes/particules identiques à la S2.
+- **Mécanique** : `/ritual setup` (perm `kamooflite.admin`) donne 3 items (`NETHER_WART_BLOCK`/`BREEZE_ROD`/`BLAZE_ROD`). Le rod charge une **structure NBT** (`ritual.nbt`/`ritualbase.nbt`, embarquées à la racine du jar) et pose l'autel + **9 armor stands invisibles** en octogone. On pose 9 **têtes de joueurs distincts** (`PlayerArmorStandManipulateEvent`, dupe par nom, fenêtre horaire) ; la 9e lance la **cinématique** (`RitualAnimation.execute` : cycle jour figé + temps accéléré, particules rouges, 11 éclairs, sphère bleue) puis **drop un livre** au centre.
+- **Pactes** (`/ritual pacte 1|2`, livre en main, token à usage unique) : **Ensanglanté** (`Attribute.MAX_HEALTH` +10 = +5 cœurs ; mort → perte + **3 têtes** droppées) / **Oublié** (`WEAKNESS` réappliquée à join/milk/totem ; mort → **aucune tête**). La logique de mort est branchée dans `KamoofLite.onDeath`.
+- **Persistance** : `plugins/KamoofLite/ritual.yml` (`ritual.data.location`, `pactes` = tokens, `pacte.<uuid>` = pacte choisi).
+- **Remplacements Paper natif** vs S2 : `MiniMessage` (livre/messages, `<br>`→`<newline>`), `GameRule.DO_DAYLIGHT_CYCLE`, `Attribute.MAX_HEALTH` + modifier `kamooflite:pacte`, `SkullMeta.getOwnerProfile()` pour le nom. Build : `build.ps1`/`build.sh` compilent tout `kamoof/**` (`-encoding UTF-8`) et embarquent les `.nbt`.
+- **À VALIDER en live** : `/ritual setup` → autel bâti ; 9 têtes distinctes → cinématique + livre ; pacte Ensanglanté (+5 cœurs, mort = 3 têtes) ; pacte Oublié (Weakness, mort = 0 tête) ; token de livre non réutilisable ; pas de conflit avec le déguisement (pose sur armor stand = `PlayerArmorStandManipulateEvent`, pas `PlayerInteractEvent`).
 
 ### Version : v2.9 (masse unique sur le serveur)
 

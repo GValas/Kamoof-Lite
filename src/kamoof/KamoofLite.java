@@ -36,6 +36,12 @@ import org.bukkit.inventory.meta.BundleMeta;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.attribute.Attribute;
+
+import kamoof.ritual.RitualBook;
+import kamoof.ritual.RitualListener;
+import kamoof.ritual.RitualManager;
+import kamoof.ritual.RitualSetup;
 
 import java.io.File;
 import java.lang.reflect.Constructor;
@@ -84,12 +90,17 @@ public class KamoofLite extends JavaPlugin implements Listener {
     public void onEnable() {
         getServer().getPluginManager().registerEvents(this, this);
         chargerMasse();
-        getLogger().info("KamoofLite v2.9 actif.");
+        // Rituel des tetes (feature portee de KamoofSMP S2)
+        getServer().getPluginManager().registerEvents(new RitualSetup(), this);
+        getServer().getPluginManager().registerEvents(new RitualListener(), this);
+        RitualManager.load(this);
+        getLogger().info("KamoofLite v3.0 actif.");
     }
 
     @Override
     public void onDisable() {
         sauverMasse();
+        RitualManager.save();
     }
 
     // Charge la memoire persistante de la masse unique depuis mace.yml.
@@ -148,13 +159,33 @@ public class KamoofLite extends JavaPlugin implements Listener {
         Player player = event.getEntity();
         PlayerProfile own = restoreAppearance(player);
 
-        // Drop d'une tete portant le vrai skin (textures) du joueur mort
+        // Pacte du rituel : influe sur le nombre de tetes droppees.
+        String pacte = RitualManager.getPacte(player);
+        int headCount = 1;
+        if ("2".equalsIgnoreCase(pacte)) {
+            // Pacte Oublie : aucune tete ne tombe.
+            headCount = 0;
+            RitualManager.setPacte(player, null);
+            RitualManager.send(player, RitualManager.MSG_DEATH_FORGOTTEN);
+        } else if ("1".equalsIgnoreCase(pacte)) {
+            // Pacte Ensanglante : 3 tetes + retrait du bonus de vie.
+            headCount = RitualManager.BLOODY_HEADS;
+            try {
+                player.getAttribute(Attribute.MAX_HEALTH).removeModifier(RitualManager.hpModifier());
+            } catch (Throwable ignore) { }
+            RitualManager.setPacte(player, null);
+            RitualManager.send(player, RitualManager.MSG_DEATH_BLOODY);
+        }
+        if (headCount <= 0) return;
+
+        // Drop d'une (ou plusieurs) tete(s) portant le vrai skin (textures) du joueur mort
         try {
             PlayerProfile headProfile = (own != null) ? own : player.getPlayerProfile();
             ItemStack head = new ItemStack(Material.PLAYER_HEAD);
             SkullMeta meta = (SkullMeta) head.getItemMeta();
             meta.setPlayerProfile(headProfile);
             head.setItemMeta(meta);
+            head.setAmount(headCount);
             event.getDrops().add(head);
         } catch (Throwable t) {
             getLogger().warning("Drop tete echoue: " + t.getMessage());
@@ -221,6 +252,10 @@ public class KamoofLite extends JavaPlugin implements Listener {
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        if (command.getName().equalsIgnoreCase("ritual")) {
+            return onRitualCommand(sender, args);
+        }
+        // /undisguise
         if (!(sender instanceof Player player)) {
             sender.sendMessage("Commande reservee aux joueurs.");
             return true;
@@ -231,6 +266,68 @@ public class KamoofLite extends JavaPlugin implements Listener {
         }
         restoreAppearance(player);
         player.sendMessage("§aTu as repris ton apparence.");
+        return true;
+    }
+
+    // /ritual setup (admin) | /ritual pacte <1|2> (accepte le pacte du livre en main)
+    private boolean onRitualCommand(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("Commande reservee aux joueurs.");
+            return true;
+        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("pacte")) {
+            if (!args[1].equals("1") && !args[1].equals("2")) return true;
+            ItemStack book = player.getInventory().getItemInMainHand();
+            UUID uuid = RitualBook.getUUID(book);
+            if (uuid == null) {
+                book = player.getInventory().getItemInOffHand();
+                uuid = RitualBook.getUUID(book);
+            }
+            if (uuid == null) return true;
+            if (RitualManager.getPacte(player) != null) {
+                RitualManager.send(player, RitualManager.MSG_ALREADY_CHOSE);
+                return true;
+            }
+            if (!RitualManager.isValidToken(uuid)) return true;
+            book.setAmount(0);
+            RitualManager.setPacte(player, args[1]);
+            return true;
+        }
+        if (args.length >= 1 && args[0].equalsIgnoreCase("setup")) {
+            if (!player.hasPermission("kamooflite.admin")) {
+                player.sendMessage("§cReserve aux admins.");
+                return true;
+            }
+            if (player.getInventory().addItem(RitualSetup.getItems()).isEmpty()) {
+                player.sendMessage("§aItems de setup du rituel recus. Clic-droit un bloc avec le baton.");
+            } else {
+                player.sendMessage("§cInventaire plein.");
+            }
+            return true;
+        }
+        if (args.length == 4 && args[0].equalsIgnoreCase("place")) {
+            if (!player.hasPermission("kamooflite.admin")) {
+                player.sendMessage("§cReserve aux admins.");
+                return true;
+            }
+            try {
+                double x = Double.parseDouble(args[1]);
+                double y = Double.parseDouble(args[2]);
+                double z = Double.parseDouble(args[3]);
+                org.bukkit.Location center = new org.bukkit.Location(player.getWorld(), x, y, z);
+                if (RitualSetup.placeFullAltar(center, player)) {
+                    player.sendMessage("§aAutel du rituel construit, centre en §e"
+                            + (int) x + " " + (int) y + " " + (int) z + "§a (monde " + player.getWorld().getName() + ").");
+                } else {
+                    player.sendMessage("§cStructure ritual.nbt introuvable.");
+                }
+            } catch (NumberFormatException e) {
+                player.sendMessage("§cCoordonnees invalides. Usage: /ritual place <x> <y> <z>");
+            }
+            return true;
+        }
+        player.sendMessage("§7/ritual setup §8— items d'installation (admin)");
+        player.sendMessage("§7/ritual place <x> <y> <z> §8— construit l'autel centre sur ces coords (admin)");
         return true;
     }
 
